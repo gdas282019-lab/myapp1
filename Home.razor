@@ -1,0 +1,254 @@
+@inject JobMatchingService MatchingService
+
+<div class="app-shell">
+
+    <header class="hero">
+        <div class="hero-glow"></div>
+        <div class="hero-content">
+            <div class="brand">
+                <span class="brand-mark">🧭</span>
+                <span class="brand-name">CareerCompass</span>
+            </div>
+            <h1>Find the job that actually fits you.</h1>
+            <p class="hero-sub">
+                Tell us your degree, experience, and skills — we'll instantly match you against
+                real fresher-friendly job roles, right in your browser.
+            </p>
+        </div>
+    </header>
+
+    <main class="content">
+
+        <!-- STEP 1: DEGREE -->
+        <section class="glass-card">
+            <div class="step-header">
+                <span class="step-badge">1</span>
+                <div>
+                    <h2>Your Degree</h2>
+                    <p class="step-hint">Pick the qualification closest to yours.</p>
+                </div>
+            </div>
+            <div class="degree-grid">
+                @foreach (var degree in DegreeCatalog.Names)
+                {
+                    <button type="button"
+                            class="degree-pill @(selectedDegree == degree ? "active" : "")"
+                            @onclick="() => selectedDegree = degree">
+                        @degree
+                    </button>
+                }
+            </div>
+        </section>
+
+        <!-- STEP 2: EXPERIENCE -->
+        <section class="glass-card">
+            <div class="step-header">
+                <span class="step-badge">2</span>
+                <div>
+                    <h2>Years of Experience</h2>
+                    <p class="step-hint">Include internships if they were substantial.</p>
+                </div>
+            </div>
+            <div class="slider-wrap">
+                <input type="range" min="0" max="6" step="1"
+                       class="slider"
+                       @bind="experienceYearsRaw" @bind:event="oninput" />
+                <div class="slider-value">@ExperienceLabel(experienceYears)</div>
+            </div>
+            <div class="slider-scale">
+                <span>Fresher</span>
+                <span>3 yrs</span>
+                <span>6+ yrs</span>
+            </div>
+        </section>
+
+        <!-- STEP 3: SKILLS -->
+        <section class="glass-card">
+            <div class="step-header">
+                <span class="step-badge">3</span>
+                <div>
+                    <h2>Your Skills</h2>
+                    <p class="step-hint">Tap everything that applies. Selected: <strong>@selectedSkills.Count</strong></p>
+                </div>
+            </div>
+
+            @foreach (var group in SkillCatalog.Groups)
+            {
+                <div class="skill-group">
+                    <h3>@group.Key</h3>
+                    <div class="chip-row">
+                        @foreach (var skill in group.Value)
+                        {
+                            <button type="button"
+                                    class="chip @(selectedSkills.Contains(skill) ? "chip-active" : "")"
+                                    @onclick="() => ToggleSkill(skill)">
+                                @skill
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </section>
+
+        <!-- CTA -->
+        <div class="cta-bar">
+            <button class="btn-primary" @onclick="FindJobs" disabled="@(selectedSkills.Count == 0 || string.IsNullOrEmpty(selectedDegree))">
+                ✨ Find My Best Jobs
+            </button>
+            @if (hasSearched)
+            {
+                <button class="btn-ghost" @onclick="ResetAll">Start Over</button>
+            }
+            @if (selectedSkills.Count == 0)
+            {
+                <span class="cta-hint">Select at least one skill to continue</span>
+            }
+            else if (string.IsNullOrEmpty(selectedDegree))
+            {
+                <span class="cta-hint">Pick your degree to continue</span>
+            }
+        </div>
+
+        <!-- RESULTS -->
+        @if (hasSearched && results is not null)
+        {
+            <section class="results" id="results">
+                <h2 class="results-title">Your Top Matches</h2>
+                <p class="results-sub">Ranked by how well your profile fits each role.</p>
+
+                <div class="results-grid">
+                    @for (int i = 0; i < results.Count && i < 8; i++)
+                    {
+                        var r = results[i];
+                        var scoreClass = GetScoreClass(r.MatchScore);
+                        <article class="job-card">
+                            @if (i == 0)
+                            {
+                                <div class="top-pick">🏆 Top Pick</div>
+                            }
+                            <div class="job-card-head">
+                                <span class="job-icon">@r.Job.Icon</span>
+                                <div>
+                                    <h3>@r.Job.Title</h3>
+                                    <span class="job-category">@r.Job.Category</span>
+                                </div>
+                            </div>
+
+                            <p class="job-desc">@r.Job.Description</p>
+
+                            <div class="score-row">
+                                <div class="score-track">
+                                    <div class="score-fill @scoreClass" style="width:@(r.MatchScore)%"></div>
+                                </div>
+                                <span class="score-label @scoreClass">@r.MatchScore.ToString("0")% match</span>
+                            </div>
+
+                            @if (r.MatchedSkills.Count > 0)
+                            {
+                                <div class="tag-block">
+                                    <span class="tag-title">You have</span>
+                                    <div class="chip-row small">
+                                        @foreach (var s in r.MatchedSkills)
+                                        {
+                                            <span class="chip chip-good">@s</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            @if (r.MissingSkills.Count > 0)
+                            {
+                                <div class="tag-block">
+                                    <span class="tag-title">Consider learning</span>
+                                    <div class="chip-row small">
+                                        @foreach (var s in r.MissingSkills)
+                                        {
+                                            <span class="chip chip-gap">@s</span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="job-footer">
+                                <span class="salary">💰 @r.Job.SalaryRangeINR</span>
+                                @if (!r.ExperienceFits)
+                                {
+                                    <span class="warn-tag">Experience outside typical range</span>
+                                }
+                            </div>
+
+                            <a class="linkedin-btn" href="@BuildLinkedInUrl(r.Job.Title)" target="_blank" rel="noopener noreferrer">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+                                    <path d="M20.45 20.45h-3.55v-5.57c0-1.33-.02-3.03-1.85-3.03-1.85 0-2.14 1.45-2.14 2.94v5.66H9.36V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.38-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45z"/>
+                                </svg>
+                                Search on LinkedIn
+                            </a>
+                        </article>
+                    }
+                </div>
+            </section>
+        }
+    </main>
+
+    <footer class="site-footer">
+        <p>CareerCompass runs entirely in your browser — nothing you enter is sent to a server.</p>
+    </footer>
+</div>
+
+@code {
+    private string selectedDegree = "";
+    private int experienceYearsRaw = 0;
+    private HashSet<string> selectedSkills = new();
+    private List<MatchResult>? results;
+    private bool hasSearched = false;
+
+    private int experienceYears => experienceYearsRaw;
+
+    private void ToggleSkill(string skill)
+    {
+        if (!selectedSkills.Add(skill))
+        {
+            selectedSkills.Remove(skill);
+        }
+    }
+
+    private void FindJobs()
+    {
+        if (selectedSkills.Count == 0 || string.IsNullOrEmpty(selectedDegree)) return;
+
+        results = MatchingService.FindMatches(selectedSkills, experienceYears, selectedDegree);
+        hasSearched = true;
+    }
+
+    private void ResetAll()
+    {
+        selectedDegree = "";
+        experienceYearsRaw = 0;
+        selectedSkills.Clear();
+        results = null;
+        hasSearched = false;
+    }
+
+    private static string ExperienceLabel(int years) => years switch
+    {
+        0 => "Fresher (0 years)",
+        1 => "1 year",
+        6 => "6+ years",
+        _ => $"{years} years"
+    };
+
+    private static string BuildLinkedInUrl(string jobTitle)
+    {
+        var keywords = Uri.EscapeDataString(jobTitle);
+        // f_E=1,2 restricts results to Internship + Entry level, which fits a fresher-focused app.
+        return $"https://www.linkedin.com/jobs/search/?keywords={keywords}&f_E=1%2C2";
+    }
+
+    private static string GetScoreClass(double score) => score switch
+    {
+        >= 80 => "excellent",
+        >= 60 => "good",
+        >= 40 => "fair",
+        _ => "low"
+    };
+}
